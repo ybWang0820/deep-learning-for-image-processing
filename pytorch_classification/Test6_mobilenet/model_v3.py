@@ -10,6 +10,7 @@ def _make_divisible(ch, divisor=8, min_ch=None):
     """
     This function is taken from the original tf repo.
     It ensures that all layers have a channel number that is divisible by 8
+    It's useful when alpha!=1
     It can be seen here:
     https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
     """
@@ -64,6 +65,11 @@ class SqueezeExcitation(nn.Module):
 
 
 class InvertedResidualConfig:
+    '''
+    expand_c: number of channels of the expanded feature map
+    use_se: use SE block or not
+    activation: 'HS' for h-swish activation function, other for ReLU
+    '''
     def __init__(self,
                  input_c: int,
                  kernel: int,
@@ -95,6 +101,7 @@ class InvertedResidual(nn.Module):
         if cnf.stride not in [1, 2]:
             raise ValueError("illegal stride value.")
 
+        # only when stride==1 and input.shape==output.shape can we use shortcut connection
         self.use_res_connect = (cnf.stride == 1 and cnf.input_c == cnf.out_c)
 
         layers: List[nn.Module] = []
@@ -120,7 +127,7 @@ class InvertedResidual(nn.Module):
         if cnf.use_se:
             layers.append(SqueezeExcitation(cnf.expanded_c))
 
-        # project
+        # project, use linear activation function
         layers.append(ConvBNActivation(cnf.expanded_c,
                                        cnf.out_c,
                                        kernel_size=1,
@@ -163,7 +170,7 @@ class MobileNetV3(nn.Module):
         layers: List[nn.Module] = []
 
         # building first layer
-        firstconv_output_c = inverted_residual_setting[0].input_c
+        firstconv_output_c = inverted_residual_setting[0].input_c   # the input channel of the first bneck block, 16 in the paper
         layers.append(ConvBNActivation(3,
                                        firstconv_output_c,
                                        kernel_size=3,
@@ -176,14 +183,14 @@ class MobileNetV3(nn.Module):
 
         # building last several layers
         lastconv_input_c = inverted_residual_setting[-1].out_c
-        lastconv_output_c = 6 * lastconv_input_c
+        lastconv_output_c = 6 * lastconv_input_c        # in mobilenetv3-large, lastconv_in_c = 160, lastconv_out_c = 960, 96 and 576 for mobilenetv3-small
         layers.append(ConvBNActivation(lastconv_input_c,
                                        lastconv_output_c,
                                        kernel_size=1,
                                        norm_layer=norm_layer,
                                        activation_layer=nn.Hardswish))
         self.features = nn.Sequential(*layers)
-        self.avgpool = nn.AdaptiveAvgPool2d(1)
+        self.avgpool = nn.AdaptiveAvgPool2d(1)      # global average pooling
         self.classifier = nn.Sequential(nn.Linear(lastconv_output_c, last_channel),
                                         nn.Hardswish(inplace=True),
                                         nn.Dropout(p=0.2, inplace=True),
@@ -230,6 +237,7 @@ def mobilenet_v3_large(num_classes: int = 1000,
             backbone for Detection and Segmentation.
     """
     width_multi = 1.0
+    # partial: passing a default parameter to the function
     bneck_conf = partial(InvertedResidualConfig, width_multi=width_multi)
     adjust_channels = partial(InvertedResidualConfig.adjust_channels, width_multi=width_multi)
 
