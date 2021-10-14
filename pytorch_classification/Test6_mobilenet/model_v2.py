@@ -21,6 +21,7 @@ def _make_divisible(ch, divisor=8, min_ch=None):
 
 class ConvBNReLU(nn.Sequential):
     def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, groups=1):
+        # groups: the input channels corresponds to how many output channels (traditionally groups=1, for dw-conv groups=in_channels)
         padding = (kernel_size - 1) // 2
         # call the init function of father class
         super(ConvBNReLU, self).__init__(
