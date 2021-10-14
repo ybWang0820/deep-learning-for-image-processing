@@ -6,6 +6,7 @@ def _make_divisible(ch, divisor=8, min_ch=None):
     """
     This function is taken from the original tf repo.
     It ensures that all layers have a channel number that is divisible by 8
+    It's useful when alpha != 1
     It can be seen here:
     https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
     """
@@ -21,17 +22,23 @@ def _make_divisible(ch, divisor=8, min_ch=None):
 class ConvBNReLU(nn.Sequential):
     def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, groups=1):
         padding = (kernel_size - 1) // 2
+        # call the init function of father class
         super(ConvBNReLU, self).__init__(
             nn.Conv2d(in_channel, out_channel, kernel_size, stride, padding, groups=groups, bias=False),
             nn.BatchNorm2d(out_channel),
-            nn.ReLU6(inplace=True)
+            nn.ReLU6(inplace=True)      # output = min(max(0, input), 6)
         )
 
 
 class InvertedResidual(nn.Module):
     def __init__(self, in_channel, out_channel, stride, expand_ratio):
+        '''
+        expand_ratio: how many times the first 1x1 conv deepens the feature map (t in the paper)
+        '''
         super(InvertedResidual, self).__init__()
-        hidden_channel = in_channel * expand_ratio
+        hidden_channel = in_channel * expand_ratio 
+        
+        # only when stride==1 and input.shape==output.shape can we use shortcut connection
         self.use_shortcut = stride == 1 and in_channel == out_channel
 
         layers = []
@@ -57,6 +64,9 @@ class InvertedResidual(nn.Module):
 
 class MobileNetV2(nn.Module):
     def __init__(self, num_classes=1000, alpha=1.0, round_nearest=8):
+        '''
+        alpha: width multiplier, controls the number of conv kernels
+        '''
         super(MobileNetV2, self).__init__()
         block = InvertedResidual
         input_channel = _make_divisible(32 * alpha, round_nearest)
@@ -89,7 +99,7 @@ class MobileNetV2(nn.Module):
         self.features = nn.Sequential(*features)
 
         # building classifier
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))     # global average pooling
         self.classifier = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(last_channel, num_classes)
